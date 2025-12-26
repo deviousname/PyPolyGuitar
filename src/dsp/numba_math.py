@@ -1,9 +1,5 @@
-# Project: PyPolyGuitar
-# File: numba_math.py
-# Description: Numba-accelerated FFT and DSP functions.
-
 import numpy as np
-from numba import jit, objmode
+from numba import jit
 from numba.typed import List
 
 @jit(nopython=True)
@@ -26,172 +22,81 @@ def blackman_harris_window(size):
     return window
 
 @jit(nopython=True)
-def process_fft(buffer, window, padded_size, padded_buffer_out):
+def apply_window_and_pad(buffer, window, padded_size):
     """
-    Applies window, zero-pads, and computes Real FFT using pre-allocated buffer.
-    padded_buffer_out: float32 array of size padded_size
+    Applies window and pads buffer with zeros.
+    Returns a float32 array ready for FFT.
     """
-    # 1. Apply Window
-    n = len(buffer)
-    # Reuse padded_buffer_out for windowed part as well, or just write directly
-
-    # Zero out the padded buffer first (or at least the part we don't write to, if we care)
-    # But since we overwrite the beginning and the rest should be zero,
-    # and we reuse it... we must ensure the tail is zero.
-    # It's better to clear it if we reuse it.
-    padded_buffer_out[:] = 0.0
-
-    # Apply window and write to padded_buffer_out
-    for i in range(n):
-        padded_buffer_out[i] = buffer[i] * window[i]
-
-    # 3. FFT
-    # numpy.fft.rfft returns complex numbers
-    # Since numpy.fft is not supported in nopython mode, we use objmode
-
-    # NOTE: float32 input to rfft produces complex64 output in numpy
-    with objmode(fft_result='complex64[:]'):
-        fft_result = np.fft.rfft(padded_buffer_out)
-        # Ensure it is complex64
-        fft_result = fft_result.astype(np.complex64)
-
-    return fft_result
+    out = np.zeros(padded_size, dtype=np.float32)
+    # Direct copy with window
+    for i in range(len(buffer)):
+        out[i] = buffer[i] * window[i]
+    return out
 
 @jit(nopython=True)
-def magnitude_spectrum(fft_complex, magnitude_out):
+def spectral_ops_and_detect(fft_magnitude, sample_rate, padded_size, min_threshold=0.05):
     """
-    Computes the magnitude of the complex FFT result into magnitude_out.
+    Performs Whitening and Iterative Subtraction.
+    Returns list of detected frequencies.
     """
-    n = len(fft_complex)
-    # Ensure magnitude_out is large enough
-    for i in range(n):
-        magnitude_out[i] = np.abs(fft_complex[i])
-    return magnitude_out
-
-@jit(nopython=True)
-def spectral_whitening(spectrum):
-    """
-    Normalizes the spectrum.
-    """
+    # 1. Spectral Whitening (Normalize)
     max_val = 0.0
-    for i in range(len(spectrum)):
-        if spectrum[i] > max_val:
-            max_val = spectrum[i]
+    for i in range(len(fft_magnitude)):
+        if fft_magnitude[i] > max_val:
+            max_val = fft_magnitude[i]
 
-    if max_val > 1e-9:
-        for i in range(len(spectrum)):
-            spectrum[i] = spectrum[i] / max_val
+    if max_val > 0:
+        for i in range(len(fft_magnitude)):
+            fft_magnitude[i] /= max_val
 
-    return spectrum
-
-@jit(nopython=True)
-def get_dominant_frequency(spectrum, sample_rate, padded_size):
-    """
-    Finds the frequency with the highest magnitude.
-    """
-    max_mag = -1.0
-    max_index = -1
-
-    # Skip DC component (index 0) and maybe very low freqs (index 1)
-    # let's start from 1 to avoid DC
-    for i in range(1, len(spectrum)):
-        if spectrum[i] > max_mag:
-            max_mag = spectrum[i]
-            max_index = i
-
-    if max_index == -1:
-        return 0.0
-
-    # Calculate frequency
-    # Frequency resolution = sample_rate / padded_size
-    # freq = index * resolution
-    freq = max_index * (sample_rate / padded_size)
-
-    return freq
-
-@jit(nopython=True)
-def iterative_spectral_subtraction(spectrum, sample_rate, padded_size, detected_frequencies_out, min_threshold=0.1, max_notes=6):
-    """
-    Detects multiple notes by finding the loudest peak and subtracting its harmonics.
-    Stores results in detected_frequencies_out (should be a typed List or cleared list).
-    Note: 'spectrum' is modified in place (it serves as working_spectrum).
-    """
-    # We assume the caller passed a copy if they wanted to preserve the original.
-    # But here we treat 'spectrum' as mutable working buffer.
-
-    # Clear output list
-    # Numba typed list doesn't have clear(), so we re-assign or pop?
-    # actually detected_frequencies_out should be passed in empty or we empty it.
-    # Numba List: .clear() exists in recent versions? Or we just assume it's new.
-    # The caller should pass a fresh list or we return a new one?
-    # "detected_frequencies = List()" allocates.
-    # If we want to reuse, we need to pass it.
-
-    # Reuse passed list
-    # Clear existing items
-    while len(detected_frequencies_out) > 0:
-        detected_frequencies_out.pop()
-
-    detected_frequencies = detected_frequencies_out
-
-    # But wait, we can't easily modify spectrum in place if it's reused for visualization later?
-    # run.py doesn't use it for anything else.
-    # So we can modify 'spectrum' directly.
-
-    working_spectrum = spectrum
-
-    # Frequency resolution
+    # 2. Iterative Subtraction
+    detected_frequencies = List()
     freq_res = sample_rate / padded_size
 
-    # Minimum magnitude threshold (relative to normalized spectrum 0-1)
+    # Harmonics usually don't go past 6 for guitar processing relevance
+    max_notes = 6
+
+    # Copy spectrum to work on it
+    work_spec = fft_magnitude.copy()
 
     for _ in range(max_notes):
-        # 1. Find loudest peak
-        max_mag = -1.0
-        max_index = -1
+        # Find peak
+        peak_mag = -1.0
+        peak_idx = -1
 
-        # Skip DC (0) and extremely low frequencies (e.g. < 40Hz)
-        # 40Hz / (48000/2048) = 40 / 23.4 = ~1.7 bins
-        start_bin = int(40 / freq_res) + 1
+        # Start searching from ~70Hz (approx bin 3) to avoid DC offset/rumble
+        start_bin = 3
 
-        for i in range(start_bin, len(working_spectrum)):
-            if working_spectrum[i] > max_mag:
-                max_mag = working_spectrum[i]
-                max_index = i
+        for i in range(start_bin, len(work_spec)):
+            if work_spec[i] > peak_mag:
+                peak_mag = work_spec[i]
+                peak_idx = i
 
-        # 2. Check if peak is above noise floor
-        if max_mag < min_threshold or max_index == -1:
+        # Threshold check
+        if peak_mag < min_threshold:
             break
 
-        # 3. Register Note
-        fundamental_freq = max_index * freq_res
-        detected_frequencies.append(fundamental_freq)
+        # Add to results
+        detected_frequencies.append(peak_idx * freq_res)
 
-        # 4. Subtract Harmonics
-        # We need to subtract the fundamental and its harmonics from the working spectrum.
-        # Simple subtraction strategy: reduce magnitude of harmonic bins.
+        # Kill the fundamental and its harmonics
+        fundamental = peak_idx
 
-        # Harmonic series: f, 2f, 3f, 4f...
-        # We assume harmonics go up to Nyquist (or array bounds)
+        # Suppress fundamental (kill zone: +/- 2 bins)
+        low = max(0, fundamental - 2)
+        high = min(len(work_spec), fundamental + 3)
+        work_spec[low:high] = 0.0
 
-        num_harmonics = 10 # subtract first 10 harmonics
-
-        for h in range(1, num_harmonics + 1):
-            harmonic_freq = fundamental_freq * h
-            harmonic_bin = int(round(harmonic_freq / freq_res))
-
-            if harmonic_bin < len(working_spectrum):
-                # Apply suppression window around the bin (to account for leakage)
-                # Simple: 3 bins (center, left, right)
-
-                # Center
-                working_spectrum[harmonic_bin] *= 0.1 # Heavily suppress
-
-                # Neighbors
-                if harmonic_bin > 0:
-                    working_spectrum[harmonic_bin - 1] *= 0.3
-                if harmonic_bin < len(working_spectrum) - 1:
-                    working_spectrum[harmonic_bin + 1] *= 0.3
+        # Suppress harmonics (integer multiples)
+        # We assume harmonics up to 5th order
+        for h in range(2, 6):
+            harmonic_idx = fundamental * h
+            if harmonic_idx < len(work_spec):
+                # Wider kill zone for harmonics (strings stretch!)
+                # Kill +/- 3 bins around harmonic
+                h_low = max(0, harmonic_idx - 3)
+                h_high = min(len(work_spec), harmonic_idx + 4)
+                work_spec[h_low:h_high] = 0.0
 
     return detected_frequencies
 
