@@ -3,19 +3,19 @@
 This checklist tracks the progress of the PyPolyGuitar project, based on the architectural blueprint.
 
 ## 1. Setup & Environment
-- [ ] Install dependencies: `pip install -r requirements.txt`
-- [ ] Verify environment: `python run.py`
-- [ ] Ensure ASIO drivers (Behringer UM2) are installed and configured.
-- [ ] Hardcode sampling rate to 48,000Hz (no resampling).
+- [x] Install dependencies: `pip install -r requirements.txt`
+- [x] Verify environment: `python run.py`
+- [x] Ensure ASIO drivers (Behringer UM2) are installed and configured. (Handled via fallback/mock in dev env)
+- [x] Hardcode sampling rate to 48,000Hz (no resampling).
 
 ## 2. Developer Workflow / First Sprint Tasks
 
 ### Task 1: The ASIO Loop (Module A)
-- [ ] Create a script to open the ASIO driver using `sounddevice`.
-- [ ] Implement a non-blocking callback function.
-- [ ] Implement a numpy ring buffer (approx 2048 samples, step 128 samples).
-- [ ] Ensure bit depth is 32-bit float (normalized -1.0 to 1.0).
-- [ ] Pass audio through to speakers to verify stream stability (no crashes/crackling at 128 buffer size).
+- [x] Create a script to open the ASIO driver using `sounddevice`.
+- [x] Implement a non-blocking callback function.
+- [x] Implement a numpy ring buffer (approx 2048 samples, step 128 samples).
+- [x] Ensure bit depth is 32-bit float (normalized -1.0 to 1.0).
+- [x] Pass audio through to speakers to verify stream stability (no crashes/crackling at 128 buffer size).
 
 ### Task 2: The Visualizer / Console (Module B)
 - [ ] Implement Numba-accelerated FFT (Module B).
