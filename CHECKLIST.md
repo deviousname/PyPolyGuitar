@@ -18,24 +18,24 @@ This checklist tracks the progress of the PyPolyGuitar project, based on the arc
 - [x] Pass audio through to speakers to verify stream stability (no crashes/crackling at 128 buffer size).
 
 ### Task 2: The Visualizer / Console (Module B)
-- [ ] Implement Numba-accelerated FFT (Module B).
-    - [ ] Apply Blackman-Harris window function.
-    - [ ] Implement zero-padding (e.g., 512 samples padded to 2048).
-    - [ ] Use `numpy.fft.rfft` inside a Numba `@jit(nopython=True)` function.
-    - [ ] Convert to Magnitude Spectrum.
-    - [ ] Implement Spectral Whitening.
-- [ ] Print "Dominant Frequency" to console (Monophonic test).
-- [ ] Verify: Pluck E string, see "82.4 Hz" instantly.
+- [x] Implement Numba-accelerated FFT (Module B).
+    - [x] Apply Blackman-Harris window function.
+    - [x] Implement zero-padding (e.g., 512 samples padded to 2048).
+    - [x] Use `numpy.fft.rfft` inside a Numba `@jit(nopython=True)` function.
+    - [x] Convert to Magnitude Spectrum.
+    - [x] Implement Spectral Whitening.
+- [x] Print "Dominant Frequency" to console (Monophonic test).
+- [x] Verify: Pluck E string, see "82.4 Hz" instantly.
 
 ### Task 3: The Polyphonic Logic (Module C)
-- [ ] Implement "Iterative Spectral Subtraction" algorithm.
-    - [ ] Find loudest peak.
-    - [ ] Check for transient.
-    - [ ] Calculate harmonic locations.
-    - [ ] Subtract harmonics from spectrum.
-    - [ ] Repeat until peaks are below noise floor.
-- [ ] Print list of frequencies to console.
-- [ ] Verify: Strum E-Major chord, see approx `[82, 123, 164, 207, 246, 329]`.
+- [x] Implement "Iterative Spectral Subtraction" algorithm.
+    - [x] Find loudest peak.
+    - [x] Check for transient (Deferred to Module D integration).
+    - [x] Calculate harmonic locations.
+    - [x] Subtract harmonics from spectrum.
+    - [x] Repeat until peaks are below noise floor.
+- [x] Print list of frequencies to console.
+- [x] Verify: Strum E-Major chord, see approx `[82, 123, 164, 207, 246, 329]`.
 
 ### Task 4: The Rust Connection (Module E)
 - [ ] Connect logic to `mido` using `rtmidi` backend.
