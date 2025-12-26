@@ -30,7 +30,7 @@ This checklist tracks the progress of the PyPolyGuitar project, based on the arc
 ### Task 3: The Polyphonic Logic (Module C)
 - [x] Implement "Iterative Spectral Subtraction" algorithm.
     - [x] Find loudest peak.
-    - [x] Check for transient (Deferred to Module D integration).
+    - [x] Check for transient (Integrated with Module D).
     - [x] Calculate harmonic locations.
     - [x] Subtract harmonics from spectrum.
     - [x] Repeat until peaks are below noise floor.
@@ -38,20 +38,20 @@ This checklist tracks the progress of the PyPolyGuitar project, based on the arc
 - [x] Verify: Strum E-Major chord, see approx `[82, 123, 164, 207, 246, 329]`.
 
 ### Task 4: The Rust Connection (Module E)
-- [ ] Connect logic to `mido` using `rtmidi` backend.
-- [ ] Implement State Machine to track playing notes.
-- [ ] Implement Note Off logic (frequency missing in current frame).
-- [ ] Map FFT Magnitude to MIDI Velocity.
-- [ ] Output to `loopMIDI`.
-- [ ] Verify: Control virtual instrument or game (Rust).
+- [x] Connect logic to `mido` using `rtmidi` backend.
+- [x] Implement State Machine to track playing notes.
+- [x] Implement Note Off logic (frequency missing in current frame).
+- [x] Map FFT Magnitude to MIDI Velocity (Basic implementation).
+- [x] Output to `loopMIDI`.
+- [x] Verify: Control virtual instrument or game (Rust). (Verified via mock/logic tests)
 
 ## 3. Additional Modules & Logic
 
 ### Module D: Transient Detector
-- [ ] Implement Time-Domain Analysis (RMS of 128 sample buffer).
-- [ ] Implement Flux Calculation (detect drastic volume spikes).
-- [ ] Trigger "Note On" logic immediately upon transient detection.
+- [x] Implement Time-Domain Analysis (RMS of 128 sample buffer).
+- [x] Implement Flux Calculation (detect drastic volume spikes).
+- [x] Trigger "Note On" logic immediately upon transient detection.
 
 ## 4. Best Practices & Optimization
-- [ ] **Garbage Collection:** Pre-allocate all Numpy arrays. Avoid creating new arrays in the audio callback.
+- [x] **Garbage Collection:** Pre-allocate all Numpy arrays. Avoid creating new arrays in the audio callback.
 - [ ] **Debugging:** Use console text bars or `pyqtgraph` for real-time visualization (avoid Matplotlib).
