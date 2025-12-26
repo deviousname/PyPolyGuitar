@@ -2,11 +2,8 @@ import unittest
 import numpy as np
 from src.dsp.numba_math import (
     blackman_harris_window,
-    process_fft,
-    magnitude_spectrum,
-    get_dominant_frequency,
-    spectral_whitening,
-    iterative_spectral_subtraction
+    apply_window_and_pad,
+    spectral_ops_and_detect,
 )
 
 class TestNumbaMath(unittest.TestCase):
@@ -17,7 +14,7 @@ class TestNumbaMath(unittest.TestCase):
         self.assertTrue(np.all(window >= 0))
         self.assertTrue(np.all(window <= 1))
 
-    def test_dominant_frequency_sine_wave(self):
+    def test_pipeline_sine_wave(self):
         sample_rate = 48000
         duration = 1.0  # seconds
         freq = 440.0    # A4
@@ -34,21 +31,29 @@ class TestNumbaMath(unittest.TestCase):
 
         # Pad and FFT
         padded_size = 2048
-        fft_complex = process_fft(buffer, window, padded_size)
 
-        # Magnitude
-        spectrum = magnitude_spectrum(fft_complex)
+        ready_for_fft = apply_window_and_pad(buffer, window, padded_size)
 
-        # Dominant frequency
-        dom_freq = get_dominant_frequency(spectrum, sample_rate, padded_size)
+        # FFT (Standard Numpy)
+        fft_complex = np.fft.rfft(ready_for_fft)
+        fft_magnitude = np.abs(fft_complex).astype(np.float32)
+
+        # Detect
+        detected_freqs = spectral_ops_and_detect(fft_magnitude, sample_rate, padded_size)
 
         # Check if it's close to 440
         # Resolution is 48000 / 2048 = ~23.4 Hz.
         # So we expect it to be within one bin width.
-        self.assertTrue(abs(dom_freq - freq) < (sample_rate / padded_size))
-        print(f"Detected frequency: {dom_freq} Hz (Expected: {freq} Hz)")
+        found = False
+        for f in detected_freqs:
+            if abs(f - freq) < (sample_rate / padded_size):
+                found = True
+                break
 
-    def test_iterative_spectral_subtraction_chord(self):
+        self.assertTrue(found, f"440Hz not found in {detected_freqs}")
+        print(f"Detected frequency: {detected_freqs} (Expected ~{freq} Hz)")
+
+    def test_spectral_ops_chord(self):
         sample_rate = 48000
         padded_size = 2048
         freq_res = sample_rate / padded_size
@@ -71,11 +76,11 @@ class TestNumbaMath(unittest.TestCase):
         spectrum[a2_bin] = 0.8 # Fundamental
         spectrum[a2_bin * 2] = 0.4 # 2nd Harmonic
 
-        # Whiten (normalize)
-        spectrum = spectral_whitening(spectrum)
+        # Normalize is done inside spectral_ops_and_detect, so we don't strictly need to pre-normalize,
+        # but the function expects raw magnitude input.
 
         # Run subtraction logic
-        detected_freqs = iterative_spectral_subtraction(spectrum, sample_rate, padded_size, min_threshold=0.1)
+        detected_freqs = spectral_ops_and_detect(spectrum, sample_rate, padded_size, min_threshold=0.1)
 
         print(f"Detected chord frequencies: {detected_freqs}")
 
