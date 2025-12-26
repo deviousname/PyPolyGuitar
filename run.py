@@ -9,8 +9,13 @@ from src.dsp.numba_math import (
     process_fft,
     magnitude_spectrum,
     spectral_whitening,
-    iterative_spectral_subtraction
+    iterative_spectral_subtraction,
+    calculate_rms,
+    detect_transient
 )
+from src.midi.interface import MidiInterface
+import numpy as np
+from numba.typed import List
 
 def main():
     print("Initializing PyPolyGuitar...")
@@ -25,8 +30,25 @@ def main():
     # 2. Initialize Audio Stream
     audio_stream = AudioStream(ring_buffer)
 
+    # 3. Initialize MIDI
+    midi = MidiInterface()
+    midi.open_port()
+
     # Pre-calculate window
     window = blackman_harris_window(ANALYSIS_WINDOW_SIZE)
+
+    # Pre-allocate DSP buffers
+    padded_buffer_out = np.zeros(PADDED_SIZE, dtype=np.float32)
+    # FFT output is complex64, size N/2 + 1
+    fft_out_size = PADDED_SIZE // 2 + 1
+    magnitude_out = np.zeros(fft_out_size, dtype=np.float32)
+
+    # Detected frequencies out (Numba List)
+    # We pass a dummy list but the function currently returns a new list
+    detected_frequencies_out = List()
+
+    # State for transient detection
+    previous_rms = 0.0
 
     print("Starting Audio Stream...")
     try:
@@ -42,20 +64,36 @@ def main():
                 # The ring buffer logic wraps around.
                 buffer_snapshot = ring_buffer.read_recent(ANALYSIS_WINDOW_SIZE)
 
-                # Check if we have enough data (it returns zero initialized buffer initially)
-                # But it always returns requested size.
+                # Check for transient
+                # For transient detection, we might want a smaller window (e.g. 128)
+                # But here we are using the snapshot.
+                # Let's take the last 128 samples for transient detection logic as per Module D description
+                recent_chunk = buffer_snapshot[-128:]
+                current_rms = calculate_rms(recent_chunk)
+
+                is_transient = detect_transient(current_rms, previous_rms)
+                previous_rms = current_rms
 
                 # 4. Perform DSP
-                fft_complex = process_fft(buffer_snapshot, window, PADDED_SIZE)
-                magnitude = magnitude_spectrum(fft_complex)
+                fft_complex = process_fft(buffer_snapshot, window, PADDED_SIZE, padded_buffer_out)
+                magnitude = magnitude_spectrum(fft_complex, magnitude_out)
                 whitened_spectrum = spectral_whitening(magnitude)
 
-                detected_freqs = iterative_spectral_subtraction(whitened_spectrum, SAMPLE_RATE, PADDED_SIZE)
+                detected_freqs = iterative_spectral_subtraction(whitened_spectrum, SAMPLE_RATE, PADDED_SIZE, detected_frequencies_out)
 
                 # 5. Output
                 # Format list of floats to string
                 freq_str = ", ".join([f"{f:6.1f}" for f in detected_freqs])
-                print(f"\rDetected Frequencies: [{freq_str}] Hz        ", end="", flush=True)
+
+                transient_msg = " [TRANSIENT]" if is_transient else ""
+                print(f"\rDetected Frequencies: [{freq_str}] Hz {transient_msg}       ", end="", flush=True)
+
+                # 6. MIDI Output
+                # We only send MIDI updates if we detected something meaningful?
+                # Or we update continuously.
+                # If a transient is detected, we might want to force an update or handle it specifically.
+                # For now, we just pass the detected frequencies to the MIDI interface.
+                midi.update_notes(detected_freqs)
 
             except Exception as e:
                 print(f"\nError in processing loop: {e}")
@@ -70,6 +108,8 @@ def main():
         print(f"Error: {e}")
     finally:
         audio_stream.stop()
+        if midi.output_port:
+            midi.close_port()
         print("Exited.")
 
 if __name__ == "__main__":
